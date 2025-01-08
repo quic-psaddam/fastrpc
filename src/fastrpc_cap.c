@@ -6,6 +6,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 
 #define FARF_ERROR 1
 
@@ -20,7 +21,7 @@
 
 #define BUF_SIZE 50
 
-const char * RPROC_SUBSYSTEM_NAME[] = {"adsp", "mss", "spss", "cdsp"};
+const char * RPROC_SUBSYSTEM_NAME[] = {"adsp", "mss", "spss", "cdsp", "cdsp1", "reserved", "reserved", "reserved"};
 
 static inline uint32_t fastrpc_check_if_dsp_present_pil(uint32_t domain) {
 	uint32_t domain_supported = 0;
@@ -47,7 +48,7 @@ static inline uint32_t fastrpc_check_if_dsp_present_rproc(uint32_t domain) {
 	struct stat dir_stat;
 	char *buffer = NULL;
 
-	if (domain < ADSP_DOMAIN_ID || domain > CDSP_DOMAIN_ID) {
+	if (domain < ADSP_DOMAIN_ID || domain > CDSP1_DOMAIN_ID) {
 		FARF(ERROR, "%s Invalid domain 0x%x ", __func__, domain);
 		return 0;
 	}
@@ -58,11 +59,12 @@ static inline uint32_t fastrpc_check_if_dsp_present_rproc(uint32_t domain) {
 	while (1) {
 		memset(buffer, 0, BUF_SIZE);
 		snprintf(buffer, BUF_SIZE, "%s%d", dir_base_path, dir_index);
-		if (stat(buffer, &dir_stat) == -1) {
+		std_strlcat(buffer, "/name", BUF_SIZE);
+		int fd = open(buffer, O_RDONLY);
+		if (fd == -1) {
 			break;
 		}
-		std_strlcat(buffer, "/name", BUF_SIZE);
-		FILE *file = fopen(buffer, "r");
+		FILE *file = fdopen(fd, "r");
 		if (file != NULL) {
 			memset(buffer, 0, BUF_SIZE);
 			if (fgets(buffer, BUF_SIZE, file) != NULL) {
@@ -75,6 +77,7 @@ static inline uint32_t fastrpc_check_if_dsp_present_rproc(uint32_t domain) {
 			}
 			fclose(file);
 		}
+		close(fd);
 		dir_index++;
 	}
 bail :
@@ -88,7 +91,7 @@ bail :
 }
 
 int fastrpc_get_cap(uint32_t domain, uint32_t attributeID, uint32_t *capability) {
-   int nErr = AEE_SUCCESS, dev = -1, dom = domain & DOMAIN_ID_MASK;
+   int nErr = AEE_SUCCESS, dev = -1, dom = GET_DOMAIN_FROM_EFFEC_DOMAIN_ID(domain);
 
    VERIFYC(IS_VALID_EFFECTIVE_DOMAIN_ID(domain), AEE_EBADPARM);
    VERIFYC(capability != NULL, AEE_EBADPARM);
@@ -147,7 +150,7 @@ static int check_status_notif_version2_capability(int domain)
 {
 	int nErr = 0;
 	struct remote_dsp_capability cap = {0};
-	cap.domain = (domain & DOMAIN_ID_MASK);
+	cap.domain = GET_DOMAIN_FROM_EFFEC_DOMAIN_ID(domain);
 	cap.attribute_ID = STATUS_NOTIFICATION_SUPPORT;
 
 	nErr= fastrpc_get_cap(cap.domain, cap.attribute_ID, &cap.capability);

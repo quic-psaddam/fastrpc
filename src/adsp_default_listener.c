@@ -37,12 +37,14 @@
 #define SDSP_SECURE_DEVICE_NAME "fastrpc-sdsp-secure"
 #define MDSP_SECURE_DEVICE_NAME "fastrpc-mdsp-secure"
 #define CDSP_SECURE_DEVICE_NAME "fastrpc-cdsp-secure"
+#define CDSP1_SECURE_DEVICE_NAME "fastrpc-cdsp1-secure"
 
 // Array of supported domain names and its corresponding ID's.
 static domain_t supported_domains[] = {{ADSP_DOMAIN_ID, ADSP_DOMAIN},
                                        {MDSP_DOMAIN_ID, MDSP_DOMAIN},
                                        {SDSP_DOMAIN_ID, SDSP_DOMAIN},
-                                       {CDSP_DOMAIN_ID, CDSP_DOMAIN}};
+                                       {CDSP_DOMAIN_ID, CDSP_DOMAIN},
+                                       {CDSP1_DOMAIN_ID, CDSP1_DOMAIN}};
 
 // Get domain name for the domain id.
 static domain_t *get_domain_uri(int domain_id) {
@@ -59,7 +61,7 @@ static domain_t *get_domain_uri(int domain_id) {
 
 static const char *get_secure_device_name(int domain_id) {
 	const char *name;
-	int domain = domain_id & DOMAIN_ID_MASK;
+	int domain = GET_DOMAIN_FROM_EFFEC_DOMAIN_ID(domain_id);
 
 	switch (domain) {
 	case ADSP_DOMAIN_ID:
@@ -73,6 +75,9 @@ static const char *get_secure_device_name(int domain_id) {
 		break;
 	case CDSP_DOMAIN_ID:
 		name = CDSP_SECURE_DEVICE_NAME;
+		break;
+	case CDSP1_DOMAIN_ID:
+		name = CDSP1_SECURE_DEVICE_NAME;
 		break;
 	default:
 		name = DEFAULT_DEVICE;
@@ -136,6 +141,10 @@ static int fastrpc_wait_for_secure_device(int domain)
 		VERIFY_EPRINTF("Error: inotify_add_watch failed, invalid fd errno = %s\n", strerror(errno));
 		return AEE_EINVALIDFD;
 	}
+
+	if (fastrpc_dev_exists(dev_name))
+		goto bail;
+
 	memset(pfd, 0 , sizeof(pfd));
 	pfd[0].fd = inotify_fd;
 	pfd[0].events = POLLIN;
@@ -143,6 +152,7 @@ static int fastrpc_wait_for_secure_device(int domain)
 	while (1) {
 		int ret = 0;
 		char buffer[EVENT_BUF_LEN];
+		struct inotify_event *event;
 
 		ret = poll(pfd, 1, POLL_TIMEOUT);
 		if(ret < 0){
@@ -155,21 +165,27 @@ static int fastrpc_wait_for_secure_device(int domain)
 			err = AEE_EPOLL;
 			break;
 		}
+		/* read on inotify fd never reads partial events. */
 		ssize_t len = read(inotify_fd, buffer, sizeof(buffer));
 		if (len < 0) {
 			VERIFY_EPRINTF("Error: %s: read failed, errno = %s\n", __func__, strerror(errno));
 			err = AEE_EEVENTREAD;
 			break;
 		}
-		// Check if the event corresponds to the creation of the device node.
-		struct inotify_event* event = (struct inotify_event*)buffer;
-		if (event->wd == watch_fd && (event->mask & IN_CREATE) &&
-			(std_strcmp(dev_name, event->name) == 0)) {
-			// Device node created, process proceed to open and use it.
-			VERIFY_IPRINTF("Device node created!\n");
-			break; // Exit the loop after device creation is detected.
+		 /* Loop over all events in the buffer. */
+		for (char *ptr = buffer; ptr < buffer + len;
+					ptr += sizeof(struct inotify_event) + event->len) {
+			event = (struct inotify_event *) ptr;
+			/* Check if the event corresponds to the creation of the device node. */
+			if (event->wd == watch_fd && (event->mask & IN_CREATE) &&
+				(std_strcmp(dev_name, event->name) == 0)) {
+				/* Device node created, process proceed to open and use it. */
+				VERIFY_IPRINTF("Device node %s created!\n", event->name);
+				goto bail; /* Exit the loop after device creation is detected. */
+			}
 		}
 	}
+bail:
 	inotify_rm_watch(inotify_fd, watch_fd);
 	close(inotify_fd);
 

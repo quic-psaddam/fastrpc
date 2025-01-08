@@ -22,7 +22,7 @@ int is_async_fastrpc_supported(void) {
  */
 const char *get_secure_domain_name(int domain_id) {
   const char *name;
-  int domain = domain_id & DOMAIN_ID_MASK;
+  int domain = GET_DOMAIN_FROM_EFFEC_DOMAIN_ID(domain_id);
 
   switch (domain) {
   case ADSP_DOMAIN_ID:
@@ -36,6 +36,9 @@ const char *get_secure_domain_name(int domain_id) {
     break;
   case CDSP_DOMAIN_ID:
     name = CDSPRPC_SECURE_DEVICE;
+    break;
+  case CDSP1_DOMAIN_ID:
+    name = CDSP1RPC_SECURE_DEVICE;
     break;
   default:
     name = DEFAULT_DEVICE;
@@ -195,6 +198,9 @@ int ioctl_getdspinfo(int dev, int domain, uint32_t attr, uint32_t *capability) {
 }
 
 int ioctl_setmode(int dev, int mode) {
+  if (mode == FASTRPC_SESSION_ID1)
+    return AEE_SUCCESS;
+
   return AEE_EUNSUPPORTED;
 }
 
@@ -237,4 +243,11 @@ int ioctl_session_info(int dev, struct fastrpc_proc_sess_info *sess_info) {
 
 int ioctl_optimization(int dev, uint32_t max_concurrency) {
   return AEE_EUNSUPPORTED;
+}
+
+int ioctl_mdctx_manage(int dev, int req, void *user_ctx,
+	unsigned int *domain_ids, unsigned int num_domain_ids, uint64_t *ctx)
+{
+	// TODO: Implement this for opensource
+	return AEE_EUNSUPPORTED;
 }
