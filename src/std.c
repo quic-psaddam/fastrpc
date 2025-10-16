@@ -13,7 +13,7 @@ int  std_getversion(char *pcDst, int nDestSize)
    return std_strlcpy(pcDst, VERSION_STRING, nDestSize);
 }
 
-
+//abc
 char std_tolower(char c)
 {
    if ((c >= 'A') && (c <= 'Z')) {
